@@ -1,0 +1,122 @@
+digraph OpenBLE_P1_Architecture {
+    // --- Graph Attributes ---
+    graph [rankdir=LR, splines=ortho, nodesep=0.8, ranksep=1.5, bgcolor="transparent"];
+    node [shape=record, style="rounded,filled", fillcolor="#f8f8f8", fontname="Helvetica", fontsize=11, penwidth=1.5];
+    edge [fontname="Helvetica", fontsize=10, penwidth=1.5];
+
+    // --- External Pins (Chip I/O) ---
+    subgraph cluster_Inputs {
+        label="";
+        style=invis;
+        rank=source;
+        node [shape=cds, style="filled", fillcolor="#e6f2ff", fontsize=12]; // Blue for inputs
+        clk_pin [label="clk"];
+        rst_n_pin [label="rst_n"];
+        tx_data_in_pin [label="tx_data_in\n\[7:0]"];
+        tx_valid_in_pin [label="tx_valid_in"];
+        start_tx_pin [label="start_tx"];
+        demod_in_pin [label="demod_in"];
+    }
+
+    subgraph cluster_Outputs {
+        label="";
+        style=invis;
+        rank=sink;
+        node [shape=cds, style="filled", fillcolor="#e6ffe6", fontsize=12]; // Green for outputs
+        tx_ready_out_pin [label="tx_ready_out"];
+        irq_tx_done_pin [label="irq_tx_done"];
+        modulated_out_pin [label="modulated_out"];
+        rx_data_out_pin [label="rx_data_out\n\[7:0]"];
+        rx_valid_out_pin [label="rx_valid_out"];
+        irq_rx_done_pin [label="irq_rx_done"];
+    }
+
+    // --- Main Core Boundary ---
+    subgraph cluster_OpenBLE_P1_Core {
+        label = "OpenBLE-P1 Digital Core";
+        style="dashed,rounded";
+        bgcolor="#ffffff";
+        penwidth=2;
+
+        // --- Clock and Reset Distribution Hubs (for visual clarity) ---
+        subgraph {
+            rank = same;
+            clk_hub [shape=point, width=0];
+            rst_hub [shape=point, width=0];
+        }
+
+        // --- Transmitter Path ---
+        subgraph cluster_TX_Path {
+            label = "Transmitter (TX) Path";
+            style="rounded";
+            bgcolor="#eef5ff";
+
+            Packet_Framer [label="{Packet Framer / TX FSM | {<start_tx> start_tx|<tx_data_in> tx_data_in|<tx_valid_in> tx_valid_in|<crc_in> crc_in} | {<tx_ready_out> tx_ready_out|<irq_tx_done> irq_tx_done|<serial_data_out> serial_data_out|<ctrl_out> ctrl_out}}"];
+            CRC_Gen [label="{CRC-24 Gen | {<data_in> data_in|<enable> enable} | <crc_out> crc_out}"];
+            Data_Whitener [label="{Data Whitener | {<data_in> data_in|<enable> enable} | <whitened_data_out> whitened_data_out}"];
+            GFSK_Modulator [label="{GFSK Modulator | <data_in> data_in | <modulated_out> modulated_out}"];
+        }
+
+        // --- Receiver Path ---
+        subgraph cluster_RX_Path {
+            label = "Receiver (RX) Path";
+            style="rounded";
+            bgcolor="#eeffee";
+
+            Packet_Parser [label="{Packet Parser / RX FSM | {<sync_found> sync_found|<bit_in> bit_in|<crc_ok> crc_ok} | {<rx_data_out> rx_data_out|<rx_valid_out> rx_valid_out|<irq_rx_done> irq_rx_done|<ctrl_out> ctrl_out}}"];
+            CRC_Checker [label="{CRC-24 Checker | {<data_in> data_in|<enable> enable} | <crc_ok> crc_ok}"];
+            Data_Dewhitener [label="{Data De-whitener | {<data_in> data_in|<enable> enable} | <data_out> dewhitened_data}"];
+            Sync_Detector [label="{Sync & AA Detector | <bit_in> bit_in | <sync_found> sync_found}"];
+            GFSK_Demodulator [label="{GFSK Demodulator | <demod_in> demod_in | <bit_out> recovered_bit}"];
+        }
+    }
+
+    // --- Connections ---
+
+    // Global Signals
+    edge [style=dotted, arrowhead=none, color=gray];
+    clk_pin -> clk_hub [style=solid, arrowhead=normal, color=black, xlabel=" clk"];
+    rst_n_pin -> rst_hub [style=solid, arrowhead=normal, color=black, xlabel=" rst_n"];
+    clk_hub -> {Packet_Framer, CRC_Gen, Data_Whitener, GFSK_Modulator, GFSK_Demodulator, Sync_Detector, Packet_Parser, Data_Dewhitener, CRC_Checker};
+    rst_hub -> {Packet_Framer, CRC_Gen, Data_Whitener, GFSK_Modulator, GFSK_Demodulator, Sync_Detector, Packet_Parser, Data_Dewhitener, CRC_Checker};
+
+    // TX Path Connections
+    edge [style=solid, arrowhead=normal, color="#00529B"];
+    start_tx_pin -> Packet_Framer:start_tx;
+    tx_data_in_pin -> Packet_Framer:tx_data_in [xlabel=" [7:0]"];
+    tx_valid_in_pin -> Packet_Framer:tx_valid_in;
+    Packet_Framer:tx_ready_out -> tx_ready_out_pin;
+    Packet_Framer:irq_tx_done -> irq_tx_done_pin;
+
+    // TX Internal Data Flow
+    Packet_Framer:serial_data_out -> CRC_Gen:data_in [xlabel="PDU bits"];
+    CRC_Gen:crc_out -> Packet_Framer:crc_in [xlabel=" [23:0]"];
+    Packet_Framer:serial_data_out -> Data_Whitener:data_in [xlabel="PDU+CRC bits"];
+    Data_Whitener:whitened_data_out -> GFSK_Modulator:data_in;
+    GFSK_Modulator:modulated_out -> modulated_out_pin;
+
+    // TX Control Flow
+    edge [style=dashed, arrowhead=vee, color="#A52A2A", constraint=false];
+    Packet_Framer:ctrl_out -> CRC_Gen:enable [xlabel="crc\_en"];
+    Packet_Framer:ctrl_out -> Data_Whitener:enable [xlabel="whiten\_en"];
+
+    // RX Path Connections
+    edge [style=solid, arrowhead=normal, color="#006400"];
+    demod_in_pin -> GFSK_Demodulator:demod_in;
+    Packet_Parser:rx_data_out -> rx_data_out_pin [xlabel=" [7:0]"];
+    Packet_Parser:rx_valid_out -> rx_valid_out_pin;
+    Packet_Parser:irq_rx_done -> irq_rx_done_pin;
+
+    // RX Internal Data Flow
+    GFSK_Demodulator:bit_out -> Sync_Detector:bit_in;
+    GFSK_Demodulator:bit_out -> Packet_Parser:bit_in;
+    Sync_Detector:sync_found -> Packet_Parser:sync_found;
+    Packet_Parser:bit_in -> Data_Dewhitener:data_in [xlabel="PDU+CRC bits"];
+    Data_Dewhitener:data_out -> CRC_Checker:data_in;
+    CRC_Checker:crc_ok -> Packet_Parser:crc_ok;
+
+    // RX Control Flow
+    edge [style=dashed, arrowhead=vee, color="#A52A2A", constraint=false];
+    Packet_Parser:ctrl_out -> Data_Dewhitener:enable [xlabel="dewhiten\_en"];
+    Packet_Parser:ctrl_out -> CRC_Checker:enable [xlabel="crc\_check\_en"];
+}

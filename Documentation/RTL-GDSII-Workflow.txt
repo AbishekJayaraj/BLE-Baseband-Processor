@@ -1,0 +1,58 @@
+### ## Step 1: RTL Design & Verification
+
+**Goal:** To write and logically prove the correctness of your chip's design.
+
+* **Process:** You first write the code describing your chip's architecture and logic (like your BLE processor) in a Hardware Description Language (HDL). Then, you write a separate piece of code called a testbench to simulate your design and find any logical bugs.
+* **Software Used:**
+    * **RTL Coding:** Any text editor (e.g., **VS Code**) to write **Verilog** code.
+    * **Simulation:** **Verilator** or **Icarus Verilog (`iverilog`)**.
+    * **Waveform Viewing:** **GTKWave** to visualize the signals from the simulation and debug your design.
+
+---
+
+### ## Step 2: Synthesis
+
+**Goal:** To translate your abstract Verilog code into a list of real, physical logic gates.
+
+* **Process:** The synthesis tool reads your Verilog files and a technology library from the Process Design Kit (PDK). It converts your design into a "gate-level netlist," which is a map of standard cells (like `AND`, `OR`, `NAND`, Flip-Flops) that are connected to implement your logic.
+* **Software Used:**
+    * **Yosys:** This is the primary open-source synthesis tool.
+
+---
+
+### ## Step 3: Physical Design (Place & Route)
+
+**Goal:** To create the physical layout of the chip by placing the gates and routing the wires between them.
+
+This phase has several sub-steps, all handled within the OpenLane flow:
+
+* **A. Floorplanning:**
+    * **Process:** This step defines the chip's overall area, places the input/output (I/O) pads around the edges, and creates the power delivery network (the VDD and GND rings).
+    * **Software Used:** This is handled by scripts within **OpenLane**.
+
+* **B. Placement:**
+    * **Process:** The placement tool takes all the individual logic gates from the netlist and strategically places them within the floorplan area.
+    * **Software Used:** **RePlAce** (from the OpenROAD project).
+
+* **C. Clock Tree Synthesis (CTS):**
+    * **Process:** A special tree of buffers is built and routed to deliver the clock signal to all flip-flops with minimal skew. This ensures all parts of the chip are synchronized.
+    * **Software Used:** **TritonCTS**.
+
+* **D. Routing:**
+    * **Process:** The routing tool draws all the tiny metal wires on different layers to connect all the placed gates according to the netlist.
+    * **Software Used:** **TritonRoute**.
+
+---
+
+### ## Step 4: Final Verification & GDSII Generation
+
+**Goal:** To perform final checks to ensure the layout is manufacturable and to generate the final output file.
+
+* **Process:** The final layout undergoes two critical checks:
+    * **DRC (Design Rule Check):** Ensures the layout doesn't violate any physical rules from the foundry (e.g., minimum wire spacing).
+    * **LVS (Layout Versus Schematic):** Compares the final layout to the gate-level netlist to ensure they are electrically identical.
+* **Software Used:**
+    * **DRC & Layout Viewing:** **Magic**.
+    * **LVS:** **Netgen**.
+
+Once all these steps pass, the flow generates the final **GDSII** file, which is the blueprint sent to the factory for manufacturing.

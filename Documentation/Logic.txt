@@ -1,0 +1,55 @@
+## CRC (Cyclic Redundancy Check)
+Purpose: To detect errors. CRC is a powerful error-checking mechanism that allows the receiver to determine if the data it received was corrupted by noise during transmission.
+
+How it works:
+
+At the Transmitter: Before transmission, your crc_generator takes the main data packet (the PDU) and performs a mathematical operation based on polynomial division. The result of this calculation is a fixed-size checksum (24 bits for BLE), which is the CRC value. This CRC is then attached to the end of the data packet.
+
+At the Receiver: The receiver takes the data it received and performs the exact same CRC calculation on it. It then compares its calculated CRC with the CRC value that was attached to the end of the incoming packet.
+
+If the two CRC values match, the data is considered valid and error-free. ✅
+
+If they do not match, it means one or more bits were flipped during transmission, and the receiver discards the packet as corrupt. ❌
+
+Think of it as a highly reliable "digital fingerprint" for your data.
+
+## Data Framing
+Purpose: To create a structured package for the data. Without a frame, the receiver would just see an endless, meaningless stream of bits. The frame tells the receiver where a packet starts, what it's for, where the actual data is, and where it ends.
+
+How it works:
+Your packet_framer builds this structure by assembling several fields in a specific order:
+
+Preamble: A fixed, alternating pattern of ones and zeros (e.g., 10101010). The receiver uses this to synchronize its clock with the incoming signal, ensuring it samples the data at the correct moments.
+
+Access Address: A 32-bit code that acts like a "magic word." It identifies the type of communication. The receiver is constantly searching for this specific address to know that a valid packet is beginning.
+
+PDU (Protocol Data Unit): This is the core of the packet, containing a header (with information about the payload) and the actual payload (the useful data you want to send).
+
+CRC: The 24-bit error-checking code calculated earlier.
+
+## Data Whitening
+Purpose: To improve radio performance. It ensures the data stream is statistically random, preventing long strings of identical bits (like 00000000 or 11111111).
+
+Why it's needed: Long, constant strings of 1s or 0s can cause two problems:
+
+It can make it difficult for the receiver's clock recovery circuits to stay synchronized.
+
+It concentrates the radio energy into a very narrow frequency spike, which is inefficient.
+
+How it works:
+
+At the Transmitter: The data_whitener takes the PDU and CRC portions of the packet and scrambles them by performing an XOR operation with a known pseudo-random sequence.
+
+At the Receiver: The data_dewhitener performs the exact same XOR operation on the incoming data. Since XORing something twice with the same value restores the original, this perfectly descrambles the data, revealing the original PDU and CRC.
+
+## GFSK (Gaussian Frequency Shift Keying)
+Purpose: To modulate the data. This is the process of encoding the digital 1s and 0s onto a physical radio wave.
+
+How it works:
+Let's break down the name:
+
+Frequency Shift Keying (FSK): This is the basic concept. We use two distinct frequencies to represent our data: one frequency for a '1' and another slightly different frequency for a '0'.
+
+Gaussian: This is the refinement that makes it "cleaner." Instead of abruptly switching between the two frequencies (which creates unwanted interference on other channels), we smooth out the transitions using a Gaussian filter.
+
+Think of it like steering a car. A sudden, jerky turn is inefficient and messy (like basic FSK). A smooth, controlled turn is much cleaner (like GFSK). In your gfsk_modulator, this is done digitally by slightly increasing or decreasing the frequency of a Numerically Controlled Oscillator (NCO) in a smooth, calculated curve for each bit you send.

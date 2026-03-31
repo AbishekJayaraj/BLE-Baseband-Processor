@@ -1,0 +1,171 @@
+// Filename: cpu_diagram.dot (Version 7 - Final)
+//
+// This version fixes the 'RegFile, port wdata unrecognized' warning.
+// Run: dot -Tpng cpu_diagram.dot -o cpu_diagram.png
+
+digraph RISC_V_Pipeline {
+    // --- Global Settings ---
+    rankdir=LR;
+    splines=ortho;
+    nodesep=0.6; // Increased space between nodes
+    ranksep=1.5; // Increased space between stages
+    fontname="Arial";
+
+    // --- LEGEND ---
+    subgraph cluster_legend {
+        label = "Legend";
+        bgcolor="lightgrey";
+        node [shape=box, style=filled, width=1.5];
+        
+        subgraph cluster_color_key {
+            label="Color Key";
+            node [style=filled, shape=plaintext];
+            edge [style=invis];
+            
+            DataColor [label="Data Path", fontcolor="#000080"];
+            AddressColor [label="Address Path", fontcolor="#800000"];
+            ControlColor [label="Control Path", fontcolor="#006400"];
+            DataColor -> AddressColor -> ControlColor;
+        }
+
+        subgraph cluster_shape_key {
+            label="Shape Key";
+            node [style=filled, shape=box, color=black, fontcolor=black];
+            edge [style=invis];
+            
+            KeyReg [label="Register", fillcolor="#b2df8a"];
+            KeyMem [label="Memory", shape=cylinder, fillcolor="#fb9a99"];
+            KeyLogic [label="Combinational Logic", fillcolor="#ff7f00"];
+            KeyMux [label="Multiplexer (MUX)", shape=diamond, fillcolor="#33a02c", fontcolor=white];
+            KeyALU [label="ALU / Adder", shape=component, fillcolor="#1a9641", fontcolor=white];
+            KeyReg -> KeyMem -> KeyLogic -> KeyMux -> KeyALU;
+        }
+    }
+
+
+    // --- Pipeline Registers ---
+    IF_ID [label="IF/ID", shape=cds, style=filled, fillcolor="#cab2d6"];
+    ID_EX [label="ID/EX", shape=cds, style=filled, fillcolor="#cab2d6"];
+    EX_MEM [label="EX/MEM", shape=cds, style=filled, fillcolor="#cab2d6"];
+    MEM_WB [label="MEM/WB", shape=cds, style=filled, fillcolor="#cab2d6"];
+
+    // --- STAGE 1: INSTRUCTION FETCH (IF) ---
+    subgraph cluster_IF {
+        label = "IF Stage";
+        style = rounded; bgcolor="#e6f0ff";
+        node [style=filled, fontcolor=black];
+        
+        PC [label="PC", fillcolor="#b2df8a"];
+        PC_Adder [label="+4", shape=component, fillcolor="#1a9641", fontcolor=white];
+        PC_Mux [label="MUX", shape=diamond, fillcolor="#33a02c", fontcolor=white];
+        Inst_Mem [label="I-Mem", shape=cylinder, fillcolor="#fb9a99"];
+        {rank=same; PC; PC_Adder; PC_Mux; Inst_Mem;} // Enforce alignment
+    }
+
+    // --- STAGE 2: INSTRUCTION DECODE (ID) ---
+    subgraph cluster_ID {
+        label = "ID Stage";
+        style = rounded; bgcolor="#d9ffdd";
+        node [style=filled, fontcolor=black];
+
+        // --- FIX IS HERE: Added the <wdata> port to the Register File definition ---
+        RegFile [shape=record, label="{ {<raddr1> rs1 | <raddr2> rs2 | <waddr> rd_wb | <wdata> WriteData} | Register File | {<rdata1> ReadData1 | <rdata2> ReadData2} }", fillcolor="#b2df8a"];
+        ImmGen [label="ImmGen", fillcolor="#ff7f00"];
+        Control [label="Control", fillcolor="#ffff99"];
+        {rank=same; RegFile; ImmGen; Control;}
+    }
+
+    // --- STAGE 3: EXECUTE (EX) ---
+    subgraph cluster_EX {
+        label = "EX Stage";
+        style = rounded; bgcolor="#fff0d9";
+        node [style=filled, fontcolor=black];
+        
+        ALU [shape=record, label="{ {<A> A | <B> B} | ALU | {<res> Result | <zero> Zero} }", fillcolor="#1a9641", fontcolor=white];
+        ALUSrc_Mux [label="MUX", shape=diamond, fillcolor="#33a02c", fontcolor=white];
+        Branch_Adder [label="Branch Addr", shape=component, fillcolor="#1a9641", fontcolor=white];
+        {rank=same; ALU; ALUSrc_Mux; Branch_Adder;}
+    }
+
+    // --- STAGE 4: MEMORY ACCESS (MEM) ---
+    subgraph cluster_MEM {
+        label = "MEM Stage";
+        style = rounded; bgcolor="#ffe6e6";
+        node [style=filled, fontcolor=black];
+        
+        Data_Mem [shape=record, label="{ {<addr> Address | <wdata> WriteData} | Data Memory | <rdata> ReadData}", fillcolor="#fb9a99"];
+        Branch_Mux_Ctrl [label="Branch Logic", fillcolor="#ffff99", shape=ellipse];
+        {rank=same; Data_Mem; Branch_Mux_Ctrl;}
+    }
+    
+    // --- STAGE 5: WRITE BACK (WB) ---
+    subgraph cluster_WB {
+        label = "WB Stage";
+        style = rounded; bgcolor="#f0e6ff";
+        node [style=filled, fontcolor=black];
+        
+        MemToReg_Mux [label="MUX", shape=diamond, fillcolor="#33a02c", fontcolor=white];
+        {rank=same; MemToReg_Mux;}
+    }
+
+    //=============================================================
+    // Inter-Block Connections (The Wires)
+    //=============================================================
+    edge [color="#000080"]; // Default to Data Path color
+
+    // --- IF Stage ---
+    PC -> PC_Adder [xlabel="32", color="#800000"]; // Address Path
+    PC_Adder -> PC_Mux [xlabel="32", color="#800000"];
+    PC_Mux -> PC [xlabel="32", color="#800000"];
+    PC -> Inst_Mem [xlabel="32", color="#800000"];
+    Inst_Mem -> IF_ID [xlabel="inst (32)"];
+    PC_Adder -> IF_ID [xlabel="pc+4 (32)", color="#800000"];
+
+    // --- ID Stage ---
+    IF_ID -> RegFile:raddr1 [xlabel="rs1_addr (5)"];
+    IF_ID -> RegFile:raddr2 [xlabel="rs2_addr (5)"];
+    IF_ID -> ImmGen [xlabel="inst (32)"];
+    IF_ID -> Control [xlabel="opcode (7)", color="#006400"]; // Control Path
+    
+    RegFile:rdata1 -> ID_EX [xlabel="ReadData1 (32)"];
+    RegFile:rdata2 -> ID_EX [xlabel="ReadData2 (32)"];
+    ImmGen -> ID_EX [xlabel="immediate (32)"];
+    Control -> ID_EX [xlabel="Control Signals", color="#006400", style=dashed, constraint=false];
+    IF_ID -> ID_EX [xlabel="pc+4, rd_addr"];
+
+    // --- EX Stage ---
+    ID_EX -> ALU:A [xlabel="32"];
+    ID_EX -> ALUSrc_Mux [xlabel="32"];
+    ID_EX -> ALUSrc_Mux [xlabel="32"];
+    ALUSrc_Mux -> ALU:B [xlabel="32"];
+    ID_EX -> Branch_Adder [xlabel="pc+4 (32)", color="#800000"];
+    ID_EX -> Branch_Adder [xlabel="imm (32)", color="#800000"];
+    ID_EX -> EX_MEM [xlabel="ctrl, rd_addr, rd2_data", constraint=false];
+    
+    Control -> ALUSrc_Mux [xlabel="ALUSrc", color="#006400", style=dashed, constraint=false];
+
+    ALU:res -> EX_MEM [xlabel="Result (32)"];
+    ALU:zero -> EX_MEM [xlabel="Zero (1)", color="#006400"];
+    Branch_Adder -> EX_MEM [xlabel="Branch Target (32)", color="#800000"];
+
+    // --- MEM Stage ---
+    EX_MEM -> Data_Mem:addr [xlabel="Address (32)", color="#800000"];
+    EX_MEM -> Data_Mem:wdata [xlabel="WriteData (32)"];
+    Data_Mem:rdata -> MEM_WB [xlabel="ReadData (32)"];
+    EX_MEM -> MEM_WB [xlabel="ALU Result, rd_addr, ctrl", constraint=false];
+    
+    EX_MEM -> Branch_Mux_Ctrl [xlabel="Zero, Branch", color="#006400", style=dashed, constraint=false];
+    Branch_Mux_Ctrl -> PC_Mux [xlabel="PC_Src (1)", color="#006400", style=dashed];
+    EX_MEM -> PC_Mux [xlabel="Branch Target (32)", color="#800000", style=dashed];
+    Control -> Data_Mem [xlabel="MemWrite, MemRead", color="#006400", style=dashed, constraint=false];
+
+    // --- WB Stage (Final Feedback Loop) ---
+    MEM_WB -> MemToReg_Mux [xlabel="ALU Result (32)"];
+    MEM_WB -> MemToReg_Mux [xlabel="ReadData (32)"];
+    // --- FIX IS HERE: The wire now correctly connects to the <wdata> port ---
+    MemToReg_Mux -> RegFile:wdata [xlabel="WriteData (32)", style=dashed];
+    MEM_WB -> RegFile:waddr [xlabel="rd_addr (5)", style=dashed];
+    
+    Control -> RegFile [xlabel="RegWrite", color="#006400", style=dashed, constraint=false];
+    Control -> MemToReg_Mux [xlabel="MemToReg", color="#006400", style=dashed, constraint=false];
+}

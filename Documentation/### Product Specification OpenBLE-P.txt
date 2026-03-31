@@ -1,0 +1,114 @@
+### **Product Specification: OpenBLE-P1 Digital Baseband Transceiver Core**
+
+* **Document Version:** 1.0
+* **Date:** July 29, 2025
+* **Author:** Student Project
+
+### **1. Introduction**
+
+This document outlines the design, performance, and interface specifications for the **OpenBLE-P1**, a complete digital baseband transceiver core for the Bluetooth Low Energy (BLE) Physical Layer (PHY). This IP (Intellectual Property) core is designed to be synthesized into a physical layout (GDSII) using an open-source ASIC toolchain. The core provides the fundamental digital processing required to transmit and receive data according to the BLE standard, serving as the digital heart of a full BLE System-on-Chip (SoC).
+
+---
+
+### **2. Key Features & Project Scope**
+
+#### **2.1 Key Features**
+
+* **Protocol Compliance:** Implements the digital baseband portion of the Bluetooth Low Energy Physical Layer.
+* **Data Rate:** Supports the mandatory **1 Mbps** data rate.
+* **Modulation/Demodulation:** Includes a digital **GFSK** (Gaussian Frequency Shift Keying) modulator and demodulator.
+* **Full Transceiver Path:** Contains both a **Transmitter (TX)** and a **Receiver (RX)** path.
+* **Packet Processing:**
+    * Automatic packet framing and parsing.
+    * Hardware-based **CRC-24** generation and checking.
+    * Hardware-based **Data Whitening** and De-whitening.
+* **Interface:** Simple, parallel data bus with valid/ready handshake signals for easy integration with a master CPU or microcontroller.
+
+#### **2.2 Scope**
+
+* **In Scope:** The design covers all digital logic described in the BLE PHY specification, from the data interface to the modulated digital output (for TX) and from the demodulator input to the data interface (for RX).
+* **Out of Scope:** This project **does not** include:
+    * The Analog/RF Front-End (transceiver, LNA, PA, filters).
+    * A Digital-to-Analog (DAC) or Analog-to-Digital (ADC) converter.
+    * Higher-level BLE stack layers (e.g., L2CAP, GAP, GATT).
+
+---
+
+### **3. Target Performance & Physical Specifications**
+
+| Specification | Target Value |
+| :--- | :--- |
+| **Process Technology** | SkyWater SKY130 (130nm CMOS) |
+| **Core Area** | < 0.1 mm² (~300µm x 300µm) |
+| **Logic Gate Count** | ~15,000 - 25,000 gates |
+| **Target Clock Frequency** | 20 MHz |
+| **Supply Voltage** | 1.8V (Nominal) |
+| **Target Power** | < 5 mW @ 20 MHz during active operation |
+
+---
+
+### **4. Functional Block Diagram**
+
+The OpenBLE-P1 core is composed of two primary paths connected to a shared data interface.
+
+* **Transmitter (TX) Path:**
+    * **TX Controller FSM:** Orchestrates the transmission process.
+    * **CRC Generator:** Calculates the 24-bit CRC on the payload.
+    * **Packet Framer:** Assembles the Preamble, Access Address, PDU, and CRC.
+    * **Data Whitener:** Scrambles the PDU and CRC.
+    * **GFSK Modulator:** Generates the final modulated digital output stream.
+
+* **Receiver (RX) Path:**
+    * **RX Controller FSM:** Manages the packet reception and validation process.
+    * **GFSK Demodulator:** Converts the incoming digital signal into a bitstream.
+    * **Sync & Detector:** Detects the preamble and access address to lock onto a packet.
+    * **Packet Parser:** Extracts the PDU and CRC from the incoming packet.
+    * **Data De-whitener:** Descrambles the PDU and CRC.
+    * **CRC Checker:** Validates the integrity of the received data.
+
+---
+
+### **5. Interface Specification (Pinout)**
+
+| Pin Name | Direction | Description |
+| :--- | :--- | :--- |
+| `VDD`, `VSS` | Input | Power (1.8V) and Ground connections. |
+| `clk` | Input | Master clock input (Target: 20 MHz). ⏰ |
+| `rst_n` | Input | Active-low asynchronous reset. |
+| `tx_data_in[7:0]` | Input | 8-bit bus to load transmit payload data. |
+| `tx_valid_in` | Input | Indicates `tx_data_in` is valid. |
+| `tx_ready_out` | Output | Indicates core is ready for new transmit data. |
+| `start_tx` | Input | Pulse to begin a transmission. |
+| `rx_data_out[7:0]` | Output | 8-bit bus for received payload data. |
+| `rx_valid_out` | Output | Indicates valid data is on `rx_data_out`. |
+| `irq_tx_done` | Output | Interrupt indicating transmission is complete. ✅ |
+| `irq_rx_done` | Output | Interrupt indicating a valid packet has been received. ✅ |
+| `modulated_out` | Output | Single-bit modulated GFSK output to the DAC/RF front-end. |
+| `demod_in` | Input | Single-bit demodulator input from the ADC/RF front-end. |
+
+---
+
+### **6. Protocol Compliance**
+
+* **Standard:** Bluetooth Core Specification Version 5.3.
+* **Primary Reference:** **Volume 6, Part B (Physical Layer)** for packet structure, modulation, timing, and data processing.
+* **Secondary Reference:** **Volume 6, Part D (Link Layer)** for state control and logic flow for advertising channels.
+
+---
+
+### **7. Target Implementation Technology**
+
+* **Language:** Verilog (IEEE 1364-2005).
+* **Verification:** Verilator / Cocotb.
+* **Synthesis:** Yosys.
+* **Physical Design Flow:** OpenLane.
+* **PDK:** SkyWater 130nm (SKY130).
+
+---
+
+### **8. Project Deliverables**
+
+1.  Complete, synthesizable Verilog RTL source code for the OpenBLE-P1 core.
+2.  A comprehensive Verilog/Cocotb testbench suite for full functional verification.
+3.  The final GDSII layout file of the core, post-implementation.
+4.  A complete project report detailing the design architecture, implementation choices, verification strategy, and final performance results (Area, Power, and Timing reports from OpenLane).

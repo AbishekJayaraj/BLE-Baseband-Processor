@@ -1,0 +1,82 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage{geometry}
+\usepackage{booktabs}
+\geometry{a4paper, margin=1in}
+
+\begin{document}
+
+\begin{center}
+    \Large\textbf{GFSK Modulator \& NCO Parameter Calculations} \\
+\end{center}
+\vspace{1em}
+
+\section*{1. PLL Frequency Multiplication}
+The design uses a Phase-Locked Loop (PLL) to multiply the input frequency to provide enough resolution for the GFSK modulator.
+\begin{itemize}
+    \item \textbf{Input Reference ($F_{ref}$):} 20 MHz
+    \item \textbf{Target Internal Clock ($F_{int}$):} 400 MHz
+    \item \textbf{Multiplication Factor ($M$):}
+\end{itemize}
+\[ M = \frac{F_{int}}{F_{ref}} = \frac{400 \text{ MHz}}{20 \text{ MHz}} = 20 \]
+
+\noindent In the \texttt{tx\_modulator\_clocks.v}, this is represented by the parameter \texttt{PLL\_MULT = 20}.
+
+\section*{2. Samples Per Symbol (SPS)}
+The SPS defines how many high-speed clock cycles represent a single bit of data. This determines the ``smoothness'' of the Gaussian ramp.
+\begin{itemize}
+    \item \textbf{Data Rate ($R$):} 20 Mbps (since it is tied to the 20 MHz system clock)
+    \item \textbf{SPS Calculation:}
+\end{itemize}
+\[ SPS = \frac{F_{int}}{R} = \frac{400 \text{ MHz}}{20 \text{ Mbps}} = 20 \text{ samples per bit} \]
+
+\noindent This means \texttt{sample\_cnt} in the \texttt{gfsk\_modulator} counts from 0 to 19 for every bit.
+
+\section*{3. NCO Tuning Word Calculation}
+The Numerically Controlled Oscillator (NCO) uses an 8-bit phase accumulator. To generate a specific frequency, we must calculate the ``step size'' ($M$) added to the accumulator every clock cycle.
+
+\vspace{0.5em}
+\noindent \textbf{Formula for an N-bit NCO:}
+\[ M = \frac{F_{target} \times 2^N}{F_{int}} \]
+
+\subsection*{A. Center Carrier (100 MHz)}
+\[ M_{center} = \frac{100 \text{ MHz} \times 256}{400 \text{ MHz}} = 64 \text{ (or } 8'h40\text{)} \]
+
+\subsection*{B. Frequency Deviation (10 MHz)}
+This is the ``shift'' applied to represent a Logic 1 or Logic 0.
+\[ M_{dev} = \frac{10 \text{ MHz} \times 256}{400 \text{ MHz}} = 6.4 \approx 6 \]
+
+\begin{itemize}
+    \item \textbf{Logic 1 Frequency (110 MHz):} $64 + 6 = 70$
+    \item \textbf{Logic 0 Frequency (90 MHz):} $64 - 6 = 58$
+\end{itemize}
+
+\section*{4. Simulation Time-Scaling}
+In \texttt{clock\_gen\_pll.v}, we define the toggle rate for the simulator to match the 400 MHz physical behavior.
+\begin{itemize}
+    \item \textbf{Period ($T$):}
+\end{itemize}
+\[ T = \frac{1}{400 \text{ MHz}} = 2.5 \text{ ns} \]
+
+\begin{itemize}
+    \item \textbf{Half-Period (Toggle rate):}
+\end{itemize}
+\[ \text{Toggle} = \frac{2.5 \text{ ns}}{2} = 1.25 \text{ ns} \]
+
+\noindent This is why the simulation code uses \texttt{always \#1.25 clk\_out = \char`\~clk\_out;}.
+
+\section*{Summary Table for GTKWave Verification}
+When we inspect the waveforms, we can verify these calculations by measuring the time between edges:
+
+\vspace{1em}
+\noindent
+\begin{tabular}{@{}lllr@{}}
+\toprule
+\textbf{Signal} & \textbf{Expected Frequency} & \textbf{Expected Period} \\ \midrule
+\textbf{ext\_clk} & 20 MHz & 50 ns \\
+\textbf{clk\_fast} & 400 MHz & 2.5 ns \\
+\textbf{rf\_out (Logic 1)} & 106.4 MHz$^*$ & $\approx$ 9.4 ns \\
+\textbf{rf\_out (Logic 0)} & 93.6 MHz$^*$ & $\approx$ 10.6 ns \\ \bottomrule
+\end{tabular}
+
+\end{document}
