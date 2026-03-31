@@ -94,7 +94,7 @@ module packet_framer #(
                         if (byte_cnt == 1) packet_length <= tx_data_in;
                     end
 
-                    serial_data_out <= shift_reg[bit_cnt[2:0]];
+                    serial_data_out <= (tx_valid_in && tx_ready_out) ? tx_data_in[0] : shift_reg[bit_cnt[2:0]];
                     
                     if (bit_cnt == 7) begin
                         bit_cnt <= 0;
@@ -113,7 +113,7 @@ module packet_framer #(
                         tx_ready_out <= 0;
                     end
 
-                    serial_data_out <= shift_reg[bit_cnt[2:0]];
+                    serial_data_out <= (tx_valid_in && tx_ready_out) ? tx_data_in[0] : shift_reg[bit_cnt[2:0]];
 
                     if (bit_cnt == 7) begin
                         bit_cnt <= 0;
