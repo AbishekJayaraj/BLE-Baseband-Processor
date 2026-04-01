@@ -4,7 +4,6 @@ module Receiver_top_tb;
 
     // --- Simulation Configuration ---
     parameter REAL_SYS_FREQ = 20_000_000;
-    parameter REAL_INT_MULT = 20;
     parameter SYS_PERIOD = 1000000000 / REAL_SYS_FREQ;
     
     // --- Port Signals ---
@@ -42,7 +41,7 @@ module Receiver_top_tb;
     Receiver_top rx_dut (
         .ext_clk(ext_clk),
         .rst_n(rst_n),
-        .rf_in(rf_out),  // Connect TX output to RX input
+        .rf_in(rf_out),
         .rx_ready(rx_ready),
         .packet_valid(packet_valid),
         .rx_data_out(rx_data_out),
@@ -66,24 +65,49 @@ module Receiver_top_tb;
         end
     endtask
 
+    // ==========================================
+    // DEEP SYSTEM MONITOR (The requested info!)
+    // ==========================================
+    reg [2:0] rx_state = 0;
+    always @(posedge ext_clk) begin
+        // Track the Receiver's State Machine
+        if (rx_dut.i_parser.state !== rx_state) begin
+            $display("[%0t] RX FSM State Changed: %0d -> %0d", $time, rx_state, rx_dut.i_parser.state);
+            rx_state = rx_dut.i_parser.state;
+        end
+        
+        // Track if the demodulator ever sees a valid bit
+        if (rx_dut.demod_valid) begin
+            $display("[%0t] [DEMOD] Recovered bit: %b", $time, rx_dut.demod_data);
+        end
+        
+        // Track payload extraction
+        if (rx_data_valid) begin
+            $display("[%0t] [PARSER] Extracted Byte: 0x%02X", $time, rx_data_out);
+        end
+    end
+
     // --- Test Sequence ---
     initial begin
-        // 1. Setup Waveform Dump
-        $dumpfile("ble_system_full.vcd");
+        $dumpfile("ble_receiver_full.vcd");
         $dumpvars(0, Receiver_top_tb);
 
         $display("=== BLE Transceiver System Test ===");
         $display("Transmitter connected to Receiver through RF channel");
         $display("System Clock: %0d MHz", REAL_SYS_FREQ/1000000);
 
-        // 2. Reset Phase
+        // 1. Reset Phase
         rst_n = 0;
         start_tx = 0;
         tx_valid_in = 0;
         tx_data_in = 0;
         #(SYS_PERIOD * 10);
         rst_n = 1;
-        #(SYS_PERIOD * 5);
+
+        // 2. Wait for Receiver PLL to Lock (CRITICAL FIX)
+        $display("[%0t] Waiting for Receiver PLL to lock...", $time);
+        wait(rx_dut.pll_locked == 1'b1);
+        #(SYS_PERIOD * 20);
 
         // 3. Wait for receiver ready
         wait(rx_ready);
@@ -100,7 +124,7 @@ module Receiver_top_tb;
         wait(tx_ready_out);
         $display("[%0t] TX ready for data", $time);
 
-        // 6. Send a test packet (5 bytes payload: 0xAA, 0xBB, 0xCC, 0xDD, 0xEE)
+        // 6. Send a test packet
         $display("[%0t] Sending test packet...", $time);
         send_byte(8'hAA);
         send_byte(8'hBB);
@@ -126,13 +150,9 @@ module Receiver_top_tb;
         // 9. Display received data
         $display("\n--- Received Data ---");
         if (rx_dut.i_parser.packet_complete) begin
-            $display("Payload bytes: ");
-            for (int i = 0; i < payload_length; i = i + 1) begin
-                $display("  Byte[%0d]: 0x%02X", i, rx_dut.i_parser.payload_bytes[i]);
-            end
-            
+            $display("Payload Length: %0d bytes", payload_length);
+            $display("CRC Valid: %b", rx_dut.i_parser.crc_valid);
             $display("Received CRC: 0x%06X", rx_dut.i_parser.crc_received);
-            $display("Expected CRC: 0x%06X", tx_dut.i_crc.crc_out);
         end
 
         // 10. Final observation window
@@ -140,12 +160,4 @@ module Receiver_top_tb;
         $display("\n=== BLE Transceiver Test Complete ===");
         $finish;
     end
-
-    // --- Monitor for unexpected events ---
-    always @(posedge ext_clk) begin
-        if (rx_data_valid) begin
-            $display("[%0t] RX Data: 0x%02X", $time, rx_data_out);
-        end
-    end
-
 endmodule

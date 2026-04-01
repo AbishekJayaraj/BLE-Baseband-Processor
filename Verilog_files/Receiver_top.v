@@ -15,6 +15,20 @@ module Receiver_top (
     output wire [7:0]  payload_length // Payload length from header
 );
 
+    // --- Clock Generation (20MHz -> 400MHz) ---
+    wire clk_400mhz;
+    wire pll_locked;
+
+    clock_gen_pll i_rx_pll (
+        .clk_in(ext_clk),
+        .reset(~rst_n),
+        .clk_out(clk_400mhz),
+        .locked(pll_locked)
+    );
+
+    // Hold reset for internal modules until PLL locks
+    wire sys_rst_n = rst_n & pll_locked; 
+
     // --- Internal Interconnects ---
     wire        demod_data;
     wire        demod_valid;
@@ -31,12 +45,10 @@ module Receiver_top (
     // Converts RF signal back to digital bit stream
     gfsk_demodulator #(
         .CLK_FREQ(400_000_000),
-        .DATA_RATE(20_000_000),
-        .CARRIER(100_000_000),
-        .DEVIATION(10_000_000)
+        .DATA_RATE(20_000_000)
     ) i_demod (
-        .clk(ext_clk),
-        .rst_n(rst_n),
+        .clk(clk_400mhz),       // Uses internal 400MHz clock
+        .rst_n(sys_rst_n),
         .rf_in(rf_in),
         .data_out(demod_data),
         .data_valid(demod_valid)
@@ -45,8 +57,8 @@ module Receiver_top (
     // === 2. Data Dewhitener ===
     // Descrambles the received data using channel-specific LFSR
     data_dewhitener i_dewhitener (
-        .clk(ext_clk),
-        .rst_n(rst_n),
+        .clk(clk_400mhz),       // Uses internal 400MHz clock
+        .rst_n(sys_rst_n),
         .lfsr_load(dewhite_load),
         .enable(dewhite_enable),
         .channel_index(channel_idx),
@@ -60,8 +72,8 @@ module Receiver_top (
         .ACCESS_ADDR(32'h8E89BED6),
         .CHANNEL_IDX(6'd37)
     ) i_parser (
-        .clk(ext_clk),
-        .rst_n(rst_n),
+        .clk(clk_400mhz),       // Uses internal 400MHz clock
+        .rst_n(sys_rst_n),
         .data_in(dewhite_data),
         .data_valid(demod_valid),  // Pass demodulator valid signal
         .rx_ready(rx_ready),
@@ -74,18 +86,20 @@ module Receiver_top (
     );
 
     // --- Control Logic for Dewhitener ---
-    // Load LFSR seed when packet reception starts (after preamble detection)
-    // Enable dewhitener throughout packet reception
-    always @(posedge ext_clk or negedge rst_n) begin
-        if (!rst_n) begin
+    always @(posedge clk_400mhz or negedge sys_rst_n) begin
+        if (!sys_rst_n) begin
             dewhite_load   <= 0;
             dewhite_enable <= 0;
         end else begin
-            // Load LFSR at the start of access address
-            dewhite_load <= (i_parser.state == 4'd1) ? 1 : 0; // After preamble sync
+            // Load LFSR at the start of access address (State 1: ADDR_SYNC)
+            dewhite_load <= (i_parser.state == 3'd1) ? 1 : 0; 
             
-            // Enable dewhitener during header and payload (not preamble/address)
-            dewhite_enable <= demod_valid && ((i_parser.state == 4'd3) || (i_parser.state == 4'd4));
+            // Enable dewhitener during Header (2), Payload (3), and CRC (4)
+            dewhite_enable <= demod_valid && (
+                (i_parser.state == 3'd2) || 
+                (i_parser.state == 3'd3) || 
+                (i_parser.state == 3'd4)
+            );
         end
     end
 
