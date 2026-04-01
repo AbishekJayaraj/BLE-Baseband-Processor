@@ -1,0 +1,58 @@
+# ==========================================
+# 1. GFSK DEMODULATOR
+# ==========================================
+
+# Syntax/Hidden Character Check
+iverilog Testbenches/gfsk_demodulator_tb.v
+
+# Full Compilation
+iverilog -s gfsk_demodulator_tb -o demod_test Verilog_files/gfsk_demodulator.v Verilog_files/gfsk_modulator.v Verilog_files/tx_modulator_clocks.v Verilog_files/clock_gen_pll.v Testbenches/gfsk_demodulator_tb.v
+
+# Execution
+vvp demod_test
+
+
+# ==========================================
+# 2. DATA DEWHITENER
+# ==========================================
+
+# Full Compilation (Self-checking loopback)
+iverilog -s data_dewhitener_tb -o dewhitener_test Verilog_files/data_whitener.v Verilog_files/data_dewhitener.v Testbenches/data_dewhitener_tb.v
+
+# Execution
+vvp dewhitener_test
+
+
+# ==========================================
+# 3. RECEIVER PACKET PARSER
+# ==========================================
+
+# Full Compilation
+iverilog -s Receiver_packet_parser_tb -o parser_test Verilog_files/Receiver_packet_parser.v Testbenches/Receiver_packet_parser_tb.v
+
+# Execution
+vvp parser_test
+
+
+# ==========================================
+# 4. FULL SYSTEM LOOPBACK (TX to RX)
+# ==========================================
+
+# Full Compilation (-g2012 flag enables SystemVerilog features, *.v compiles all modules)
+iverilog -g2012 -s Receiver_top_tb -o system_test Verilog_files/*.v Testbenches/Receiver_top_tb.v
+
+# Execution
+vvp system_test
+
+# ==========================================
+# 5. BLE TRANSMITTER TOP (ble_tx_top)
+# ==========================================
+
+# Syntax/Hidden Character Check
+iverilog Testbenches/ble_tx_top_tb.v
+
+# Full Compilation (Uses wildcard to include all TX sub-modules like CRC, Whitener, Modulator)
+iverilog -g2012 -s ble_tx_top_tb -o tx_test Verilog_files/*.v Testbenches/ble_tx_top_tb.v
+
+# Execution
+vvp tx_test
