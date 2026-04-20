@@ -1,0 +1,102 @@
+\documentclass[12pt]{article}
+
+% --- Essential Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}    
+\usepackage{amssymb}    
+\usepackage{geometry}   
+\usepackage{bm}         
+\usepackage{xcolor}
+
+\geometry{a4paper, margin=1in}
+\date{}
+
+\begin{document}
+
+\title{\textbf{Mathematical Derivation of the GFSK Shaping Pulse}}
+\maketitle
+
+\section{The Core Engineering Problem}
+A digital bit is a discrete event (either $0$ or $1$). In a circuit, this is represented by a square wave. However, a square wave has "infinitely sharp" corners. According to Fourier Theory, sharp corners in time require infinite bandwidth in frequency. 
+
+To prevent a Bluetooth device from interfering with nearby Wi-Fi or other Bluetooth devices, we must "round off" these corners. We do this by passing the bit through a \textbf{Gaussian Filter}. The process of applying this filter to the bit is called \textbf{Convolution}.
+
+\section{Step 1: Defining the Gaussian Filter in Frequency}
+We start in the Frequency Domain ($f$) because it is easier to define how much "noise" we want to block. We want a filter that looks like a bell curve:
+\begin{equation}
+H(f) = e^{-af^2}
+\end{equation}
+To make this useful, we define the parameter $a$ using the \textbf{3dB Bandwidth ($B$)}. By definition, at frequency $f = B$, the power must drop by half ($1/\sqrt{2}$ in voltage).
+\begin{enumerate}
+    \item Set the equation: $e^{-aB^2} = \frac{1}{\sqrt{2}}$
+    \item Take the natural log of both sides: $-aB^2 = \ln(1) - \ln(\sqrt{2})$
+    \item Simplify using $\ln(\sqrt{2}) = \frac{1}{2}\ln(2)$: $-aB^2 = -\frac{1}{2}\ln(2)$
+    \item Isolate $a$: $a = \frac{\ln(2)}{2B^2}$
+\end{enumerate}
+Final Frequency Response:
+\begin{equation}
+H(f) = \exp\left( -\frac{\ln(2)}{2} \left( \frac{f}{B} \right)^2 \right)
+\end{equation}
+
+\section{Step 2: The Inverse Fourier Transform}
+To build a physical circuit or Verilog module, we need the \textbf{Impulse Response} $h(t)$ in the Time Domain. We find this using the Inverse Fourier Transform:
+\begin{equation}
+h(t) = \int_{-\infty}^{\infty} H(f) e^{j2\pi ft} df = \int_{-\infty}^{\infty} e^{-af^2} e^{j2\pi ft} df
+\end{equation}
+
+\subsection*{Detailed Calculus: Completing the Square}
+To solve the integral of $e^{-af^2 + j2\pi ft}$, we look at the exponent: $-af^2 + j2\pi ft$.
+\begin{enumerate}
+    \item Factor out $-a$: $-a \left( f^2 - \frac{j2\pi t}{a}f \right)$
+    \item Complete the square inside the parenthesis by adding and subtracting $\left( \frac{j\pi t}{a} \right)^2$:
+    \item The exponent becomes: $-a \left( f - \frac{j\pi t}{a} \right)^2 - \frac{\pi^2 t^2}{a}$
+\end{enumerate}
+The constant term $e^{-\pi^2 t^2/a}$ moves outside the integral. The remaining integral is a standard Gaussian integral $\int_{-\infty}^{\infty} e^{-u^2} du = \sqrt{\pi/a}$. 
+
+Substituting $a = \frac{\ln(2)}{2B^2}$ back into the result:
+\begin{equation}
+h(t) = \frac{\sqrt{\pi}}{\alpha} \exp\left( -\frac{\pi^2 t^2}{\alpha^2} \right) \quad \text{where} \quad \alpha = \sqrt{\frac{\ln(2)}{2}} \frac{1}{B}
+\end{equation}
+
+\section{Step 3: The Convolution}
+Convolution is the process of "sliding" our filter $h(t)$ across our digital bit $p(t)$.
+
+\begin{equation}
+g(t) = p(t) * h(t) = \int_{-\infty}^{\infty} p(\tau) h(t-\tau) d\tau
+\end{equation}
+Our digital bit $p(\tau)$ is a rectangle that exists only between $-T_b/2$ and $T_b/2$ (where $T_b$ is the bit duration). Inside this window, the value is $1/T_b$. Outside, it is $0$. Therefore, the integral limits shrink:
+\begin{equation}
+g(t) = \frac{1}{T_b} \int_{t-T_b/2}^{t+T_b/2} \frac{\sqrt{\pi}}{\alpha} \exp\left( -\frac{\pi^2 \tau^2}{\alpha^2} \right) d\tau
+\end{equation}
+
+\section{Step 4: Solving with the Error Function ($\text{erf}$)}
+The integral of a Gaussian curve has no "simple" solution (like $x^2$). We must use the \textbf{Error Function}, which is defined as the area under the curve:
+\begin{equation}
+\text{erf}(x) = \frac{2}{\sqrt{\pi}} \int_0^x e^{-u^2} du
+\end{equation}
+We perform a substitution: Let $u = \frac{\pi \tau}{\alpha}$. Then $du = \frac{\pi}{\alpha} d\tau$.
+Substituting these into our integral for $g(t)$ and evaluating at the upper and lower boundaries:
+\begin{equation}
+g(t) = \frac{1}{2T_b} \left[ \text{erf}\left( \frac{\pi}{\alpha} \left( t + \frac{T_b}{2} \right) \right) - \text{erf}\left( \frac{\pi}{\alpha} \left( t - \frac{T_b}{2} \right) \right) \right]
+\end{equation}
+
+\section{Step 5: Final Engineering Form ($BT$ Product)}
+To make this formula useful for the BLE standard, we introduce the \textbf{$BT$ Product} ($B \times T_b$). We rearrange the terms inside the $\text{erf}$ function:
+\begin{equation}
+\frac{\pi}{\alpha} = \frac{\pi}{\sqrt{\frac{\ln(2)}{2}} \frac{1}{B}} = \pi \sqrt{\frac{2}{\ln(2)}} B
+\end{equation}
+When we multiply by the $T_b$ inside the $\text{erf}$ parentheses, we get the final BLE Baseband equation:
+\begin{equation}
+g(t) = \frac{1}{2T_b} \left[ \text{erf}\left( \pi \sqrt{\frac{2}{\ln 2}} BT \left( \frac{t}{T_b} + \frac{1}{2} \right) \right) - \text{erf}\left( \pi \sqrt{\frac{2}{\ln 2}} BT \left( \frac{t}{T_b} - \frac{1}{2} \right) \right) \right]
+\end{equation}
+
+\section{Hardware Significance}
+In RTL (Verilog) project, we cannot calculate $\text{erf}$ in real-time. Instead, we:
+\begin{enumerate}
+    \item Plug the bit duration $T_b = 1\mu s$ and $BT = 0.5$ into this formula.
+    \item Calculate the values of $g(t)$ for small steps of $t$.
+    \item Store these values in a \textbf{Look-Up Table (LUT)}.
+    \item The LUT then tells your transmitter exactly how to shift the frequency to create a perfect BLE wave.
+\end{enumerate}
+
+\end{document}
