@@ -1,0 +1,58 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}    
+\usepackage{amssymb}    
+\usepackage{geometry}   
+\geometry{a4paper, margin=1in}
+
+\begin{document}
+
+\section{Phase Accumulation and the Continuous Phase Model}
+
+\subsection{Definition of Terms and Variables}
+To analyze the conversion of digital bits into a Radio Frequency (RF) waveform, the following parameters are defined:
+\begin{itemize}
+    \item \textbf{Carrier Frequency ($f_c$):} The center frequency (e.g., 2.402 GHz).
+    \item \textbf{Modulation Index ($h$):} A ratio defining the frequency swing relative to the bit rate. For BLE, $h = 0.5$.
+    \item \textbf{Bit Duration ($T_b$):} The time allotted for one bit ($1 \, \mu s$ for 1 Mbps PHY).
+    \item \textbf{Instantaneous Phase ($\theta(t)$):} The actual value used to drive the Sine/Cosine generator.
+\end{itemize}
+
+\subsection{Derivation of Frequency Deviation ($\Delta f$)}
+The frequency deviation is the maximum distance the signal moves from the center carrier. In GFSK, this is derived from the modulation index $h$. 
+\begin{equation}
+h = \text{Total Frequency Swing} \times T_b = (2\Delta f) \cdot T_b
+\end{equation}
+Isolating $\Delta f$ through algebraic division:
+\begin{equation}
+\Delta f = \frac{h}{2T_b}
+\end{equation}
+Substituting the BLE standard values:
+\begin{equation}
+\Delta f = \frac{0.5}{2 \times 10^{-6}} = 250,000 \, \text{Hz} = 250 \, \text{kHz}
+\end{equation}
+
+\subsection{Step-by-Step Phase Integral Derivation}
+The goal of the Baseband Processor is to generate a phase $\theta(t)$ that is the integral of the frequency. Given a sequence of bits $a_i$ and the shaping pulse $g(t)$, the instantaneous frequency deviation is:
+\begin{equation}
+f_{\text{dev}}(\tau) = \sum_{i} a_i g(\tau - iT_b)
+\end{equation}
+The phase is the integral of this frequency deviation over time:
+\begin{equation}
+\theta(t) = 2\pi h \int_{-\infty}^{t} \left[ \sum_{i} a_i g(\tau - iT_b) \right] d\tau
+\end{equation}
+Using the linearity property of integration, the summation is moved outside the integral:
+\begin{equation}
+\theta(t) = 2\pi h \sum_{i} a_i \left( \int_{-\infty}^{t} g(\tau - iT_b) d\tau \right)
+\end{equation}
+This result shows that the total phase is the cumulative sum of the areas under the shaped pulses.
+
+\subsection{RTL Significance: From Calculus to Hardware}
+In the RTL implementation of a BLE Baseband, this mathematical model is mapped to a \textbf{Phase Accumulator} within a Numerically Controlled Oscillator (NCO).
+\begin{enumerate}
+    \item \textbf{Continuous vs. Discrete:} The integral is replaced by a digital summation: $\theta[n] = \sum f_{word}[n]$.
+    \item \textbf{Phase Continuity:} The accumulator ensures that when a bit changes from $+1$ to $-1$, the phase starts from its last value rather than resetting to zero. This prevents "Phase Jumps."
+    \item \textbf{Hardware Efficiency:} The integral of the shaping pulse $\int g(\tau) d\tau$ is pre-calculated and stored in a Look-Up Table (LUT), reducing the real-time computational load on the FPGA/ASIC to simple addition.
+\end{enumerate}
+
+\end{document}
