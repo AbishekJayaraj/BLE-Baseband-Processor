@@ -186,13 +186,13 @@
 \Large{\textbf{VLSI Based Design and Implementation of Digital Baseband Processor for BLE}}\\
 \vspace{0.3cm}
 \large{\textit{Submitted by}}\\
-\Large{\textbf{Prathma Jain}  \Large{(Roll no. 40)}} \\
- \Large{\textbf{Purva Patil} \Large{(Roll no. 43)}}
+\Large{\textbf{Prathma Jain}  \Large{(Roll no. 39)}} \\
+ \Large{\textbf{Purva Patil} \Large{(Roll no. 42)}}
 \\
 \\
- \Large{\textbf{Nixson Arumugam} \Large{(Roll no. 44)}}
+ \Large{\textbf{Nixson Arumugam} \Large{(Roll no. 43)}}
 \\
- \Large{\textbf{Abishek Jayaraj} \Large{(Roll no. 45)}}\\
+ \Large{\textbf{Abishek Jayaraj} \Large{(44)}}\\
 \vspace{0.4cm}
 \large{\textit{in fulfillment for the award of the degree}}\\
 \vspace{0.3cm}
@@ -608,7 +608,7 @@ The Hardware Interface of Transceiver is thoroughly specified in two important t
 
     % --- CAPTION AND LABEL ---
     % This adds the name, number, and List of Tables entry
-    \caption{Pin specifications for the OpenBLE-P1 Core.}
+    \caption{Pin specifications for the BLE Baseband Processor Core.}
     \label{tab:ble_pins} \\
 
     % --- HEADER FOR THE *FIRST* PAGE ---
@@ -628,7 +628,7 @@ The Hardware Interface of Transceiver is thoroughly specified in two important t
     \endlastfoot
 
     % --- YOUR TABLE DATA ---
-    Open Core & VDD, VSS & Input & Power & 1 & Power (1.8V) and Ground connections. \\ \hline
+    BLE Baseband Processor Core & VDD, VSS & Input & Power & 1 & Power (1.8V) and Ground connections. \\ \hline
     ~ & clk & Input & Logic & 1 & Master clock input (Target: 20 MHz). \\ \hline
     ~ & rst\_n & Input & Logic & 1 & Active-low asynchronous reset. \\ \hline
     ~ & tx\_data\_in & Input & Bus & 8 & 8-bit bus to load transmit payload data. \\ \hline
@@ -709,32 +709,61 @@ Both are realized by means of LFSRs, providing an efficient implementation for t
 serial processing of bits.
 
 \subsection{CRC Generation using Fibonacci LFSR}
-Cyclic Redundancy Check (CRC)
-Error detection can be done through cyclic redundancy check (CRC). This algorithm uses polynomial division to detect errors in the data stream. The output from this operation is the CRC code.
-Fibonacci LFSR hardware design
-Figure 3.4 shows a 4-bit Fibonacci LFSR implementation that explains how the process works. In this setup, the flip-flop acts as the bits of the CRC code. The XOR logic gate indicates the feedback path.
-According to the Bluetooth Low Energy (BLE) protocol, a 24-bit LFSR hardware structure will be employed to generate the CRC code based on the following polynomial:
-\[
+
+The Cyclic Redundancy Check (CRC) is a critical component of the digital baseband, responsible for detecting transmission errors in the BLE packet. This section details the mathematical and hardware derivation of the 24-bit CRC used in the Physical Layer.
+
+\subsubsection{Mathematical Model in GF(2)}
+The CRC algorithm treats the input bitstream as a polynomial $M(x)$ and performs division over the Galois Field $GF(2)$. The generator polynomial $P(x)$ specified by the Bluetooth Core Specification is:
+\begin{equation}
 P(x) = x^{24} + x^{10} + x^9 + x^6 + x^4 + x^3 + x + 1
-\]
-The extended 24-bit design follows similar logic to that exhibited in the 4-bit example,
-where additional registers and feedback taps are placed in relevant locations, as dictated by the polynomial. This helps in the proper identification of errors within the BLE packets.
+\end{equation}
+In $GF(2)$, addition and subtraction are replaced by the XOR operation, and there are no carries. The CRC generation is defined as the remainder $R(x)$ of the following division:
+\begin{equation}
+R(x) = [M(x) \cdot x^{24}] \pmod{P(x)}
+\end{equation}
+
+\subsubsection{Step-by-Step LFSR Hardware Mapping}
+To implement this division efficiently in RTL, a Linear Feedback Shift Register (LFSR) in the Fibonacci configuration is utilized. The hardware mapping follows these logical steps:
+\begin{enumerate}
+    \item \textbf{Register Chain:} 24 D-type flip-flops are connected in series to store the current state of the remainder.
+    \item \textbf{Feedback Logic:} XOR gates are placed at the feedback taps defined by the coefficients of $P(x)$.
+    \item \textbf{Serial Processing:} The payload bits are shifted into the LFSR bit-serially. Each shift represents one step of the long division process.
+    \item \textbf{Initialization:} Prior to processing, the LFSR is pre-set to a 24-bit \textit{CRC Initialization Vector} (Seed) to ensure channel-specific synchronization.
+\end{enumerate}
+
+\subsubsection{Significance in RTL Design}
+The LFSR-based CRC architecture provides a zero-latency calculation of the checksum. By calculating the CRC as the packet is being transmitted or received, the baseband processor can append or verify the checksum without buffering the entire payload. This bit-serial approach minimizes the gate count and power consumption of the digital logic, which is a primary design constraint for Bluetooth Low Energy hardware.
 
 \subsection{Data Whitening using Galois LFSR}
-Whitening of data enhances the reliability of signal by avoiding repetitive strings of
-identical bits that might result in synchronization or DC offset errors. The whitening is
-done through a Galois LFSR arrangement, which uses parallel feedback for quick processing.
-A 4-bit Galois design depicted in Figure 3.4 provides an insight into the underlying principle.
-Here, the XOR feedback alters several output values from flip flops, thus creating a random bit
-sequence.
-In Bluetooth Low Energy, a 7-bit Galois LFSR based on the following polynomial:
-\[
+
+Data whitening is a fundamental randomization process used in the BLE Physical Layer to ensure spectral stability and facilitate receiver synchronization.
+
+\subsubsection{ Problem Statement: DC Bias and Clock Drift}
+Standard digital payloads often contain repetitive sequences of "0"s or "1"s. In the RF domain, these sequences lead to a lack of transitions, causing two primary issues:
+\begin{enumerate}
+    \item \textbf{DC Offset:} Continuous identical bits create a non-zero average voltage in the baseband, complicating receiver threshold detection.
+    \item \textbf{Clock Recovery:} Receivers utilize bit transitions to maintain timing synchronization. A lack of transitions leads to sampling jitter and increased Bit Error Rate (BER).
+\end{enumerate}
+
+\subsubsection{The Galois LFSR Mathematical Model}
+The whitening process utilizes a 7-bit Linear Feedback Shift Register (LFSR) configured in a Galois arrangement. The pseudo-random sequence is generated based on the following characteristic polynomial:
+\begin{equation}
 P(x) = x^7 + x^4 + 1
-\]
-is utilized in the process of whitening. The reasoning follows the same route as
-that of the 4-bit configuration, except that more stages are added, and feedback taps
-are located on bits 7 and 4. Whitening is accomplished during transmission by
-XORing the bit stream with the sequence generated.
+\end{equation}
+This polynomial produces a maximal-length sequence (m-sequence) of $127$ bits. The whitening is achieved by performing a bit-wise XOR operation between the raw payload $D_{in}$ and the output of the LFSR $W_{out}$:
+\begin{equation}
+D_{whitened} = D_{in} \oplus W_{out}
+\end{equation}
+
+\subsubsection{Hardware Architecture and State Transitions}
+In a Galois LFSR, the feedback logic is distributed between the shift registers. For the polynomial $x^7 + x^4 + 1$, the state transition of the $i$-th register $S_i$ at time $n+1$ is defined as:
+\begin{equation}
+S_4(n+1) = S_3(n) \oplus S_6(n)
+\end{equation}
+All other registers $S_i$ (where $i \neq 4$ and $i \neq 0$) simply perform a shift operation $S_i(n+1) = S_{i-1}(n)$, while $S_0(n+1) = S_6(n)$. 
+
+\subsubsection{Significance in RTL and System Design}
+The Galois configuration is chosen for its superior timing characteristics in RTL synthesis, as it minimizes the combinational logic depth between registers. Furthermore, the whitening module is initialized at the start of every packet with a 7-bit seed based on the channel index. This ensures that the physical signal varies across different frequencies, providing a form of processing gain that improves the robustness of the BLE link in crowded environments.
 
 \begin{figure}[H]
 \centering
@@ -743,8 +772,29 @@ XORing the bit stream with the sequence generated.
 \label{fig:lfsr_models}
 \end{figure}
 
-\section{GFSK Modulation}
-Gaussian Frequency Shift Keying (GFSK) is the modulation technique used in BLE for transmitting data. It converts digital bits into frequency variations, where different frequencies represent binary `0' and `1'. A Gaussian filter is applied before modulation to smooth the signal transitions and reduce bandwidth. This improves spectral efficiency and minimizes interference with other signals in the channel.
+\section{3.4 Gaussian Frequency Shift Keying (GFSK) Modulation}
+
+Gaussian Frequency Shift Keying (GFSK) serves as the fundamental modulation scheme for the Bluetooth Low Energy (BLE) physical layer. It is a constant-envelope modulation technique that optimizes spectral efficiency through pre-modulation pulse shaping.
+
+\subsection{Principles of GFSK Operation}
+GFSK modulation functions by shifting the carrier frequency $f_c$ in response to digital data. Unlike standard Frequency Shift Keying (FSK), where the frequency transitions are abrupt, GFSK utilizes a Gaussian low-pass filter to smooth the NRZ (Non-Return-to-Zero) bitstream. This filtering process suppresses the high-frequency harmonics of the square-wave pulses, thereby constraining the signal within the allocated 1 MHz channel bandwidth and minimizing Adjacent Channel Interference (ACI).
+
+\subsection{The Gaussian Shaping Filter}
+The performance of the GFSK modulator is governed by the Bandwidth-Time ($BT$) product. Per the BLE specification, a $BT$ of 0.5 is employed. This value ensures a critical balance between:
+\begin{enumerate}
+    \item \textbf{Occupied Bandwidth:} Reducing the power spectral density (PSD) sidelobes to satisfy regulatory masks.
+    \item \textbf{Intersymbol Interference (ISI):} Maintaining sufficient pulse integrity to allow for low-complexity non-coherent detection at the receiver.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{Gaussian_curve.jpg}
+\caption{A Gaussian curve}
+\label{fig:Gaussian curve}
+\end{figure}
+
+\subsection{Significance in RTL Implementation}
+The GFSK module is implemented as a digital baseband processor that drives a Numerically Controlled Oscillator (NCO). By utilizing a Look-Up Table (LUT) for the Gaussian-shaped pulses and a phase accumulator for integration, the hardware achieves a precise, phase-continuous output. This architecture is highly efficient for ASIC and FPGA implementations, providing the necessary spectral containment for BLE while minimizing power consumption.
 
 \section{GFSK Demodulation}
 GFSK demodulation is the process of recovering digital data from the received modulated signal. It detects frequency shifts in the incoming signal and converts them back into binary data. This process reverses the modulation operation performed at the transmitter. Accurate demodulation is essential for correct data recovery.
@@ -761,204 +811,166 @@ Cyclic Redundancy Check (CRC) is used for error detection in BLE communication. 
 \section{Receiver Operation}
 The receiver performs multiple operations to recover the transmitted data. It first demodulates the received signal to obtain the bitstream. The data is then de-whitened and passed to the packet parser. Finally, CRC verification ensures the correctness of the received data.
 
-\section{GFSK Calculations}
+\section{Mathematical Derivation of the GFSK Shaping Pulse }
 
-Gaussian Frequency Shift Keying (GFSK) is used in BLE to convert digital data into smooth frequency variations, ensuring reduced bandwidth and continuous phase.
 
-\subsubsection{Frequency Deviation}
+In a digital circuit, a bit is represented by a square wave. However, the "infinitely sharp" corners of a square wave require infinite bandwidth, which would cause interference. To ensure reduced bandwidth and continuous phase for Bluetooth Low Energy (BLE), we "round off" these transitions using a \textbf{Gaussian Filter} through a process called \textbf{Convolution}.
 
-The frequency deviation ($\Delta f$) is derived from modulation index $h$ and bit duration $T_b$:
-
+\subsection{Defining the Gaussian Filter in Frequency}
+We define the filter in the Frequency Domain ($f$) as a bell curve:
 \begin{equation}
-h = (2\Delta f)\cdot T_b
+H(f) = e^{-af^2}
+\end{equation}
+To find the constant $a$, we use the \textbf{3dB Bandwidth ($B$)}. At frequency $f = B$, the voltage drops to $1/\sqrt{2}$:
+\begin{enumerate}
+    \item $e^{-aB^2} = \frac{1}{\sqrt{2}}$
+    \item $-aB^2 = \ln(1) - \ln(\sqrt{2}) = -\frac{1}{2}\ln(2)$
+    \item $a = \frac{\ln(2)}{2B^2}$
+\end{enumerate}
+The final Frequency Response is:
+\begin{equation}
+H(f) = \exp\left( -\frac{\ln(2)}{2} \left( \frac{f}{B} \right)^2 \right)
 \end{equation}
 
+\subsection{The Inverse Fourier Transform}
+To implement this in RTL, we need the \textbf{Impulse Response} $h(t)$ in the Time Domain. We use the Inverse Fourier Transform:
+\begin{equation}
+h(t) = \int_{-\infty}^{\infty} H(f) e^{j2\pi ft} df = \int_{-\infty}^{\infty} e^{-af^2} e^{j2\pi ft} df
+\end{equation}
+By completing the square in the exponent and solving the Gaussian integral, we obtain:
+\begin{equation}
+h(t) = \frac{\sqrt{\pi}}{\alpha} \exp\left( -\frac{\pi^2 t^2}{\alpha^2} \right) \quad \text{where} \quad \alpha = \sqrt{\frac{\ln(2)}{2}} \frac{1}{B}
+\end{equation}
+
+\subsection{Convolution and the Error Function ($\text{erf}$)}
+The shaping pulse $g(t)$ is the convolution of a rectangular bit pulse $p(t)$ (of duration $T_b$) with the filter $h(t)$:
+\begin{equation}
+g(t) = p(t) * h(t) = \frac{1}{T_b} \int_{t-T_b/2}^{t+T_b/2} h(\tau) d\tau
+\end{equation}
+Since the integral of a Gaussian has no elementary solution, we use the \textbf{Error Function}, defined as $\text{erf}(x) = \frac{2}{\sqrt{\pi}} \int_0^x e^{-u^2} du$. After substitution and introducing the \textbf{$BT$ Product}, the final engineering form for the BLE Baseband is:
+
+\begin{equation}
+g(t) = \frac{1}{2T_b} \left[ \text{erf}\left( \pi \sqrt{\frac{2}{\ln 2}} BT \left( \frac{t}{T_b} + \frac{1}{2} \right) \right) - \text{erf}\left( \pi \sqrt{\frac{2}{\ln 2}} BT \left( \frac{t}{T_b} - \frac{1}{2} \right) \right) \right]
+\end{equation}
+
+\subsection{Hardware Significance (RTL Implementation)}
+For the BLE project, calculating $\text{erf}$ in real-time is computationally expensive for hardware. Instead:
+\begin{itemize}
+    \item We fix $BT = 0.5$ and $T_b = 1\,\mu s$ as per the standard.
+    \item We pre-calculate values of $g(t)$ and store them in a \textbf{Look-Up Table (LUT)}.
+    \item The RTL logic reads the LUT to drive the GFSK modulator, ensuring a perfect smooth frequency shift.
+\end{itemize}
+
+
+\section{Phase Accumulator Calculations}
+
+
+To analyze the conversion of digital bits into a Radio Frequency (RF) waveform, the following parameters are defined:
+\begin{itemize}
+    \item \textbf{Carrier Frequency ($f_c$):} The center frequency (e.g., 2.402 GHz).
+    \item \textbf{Modulation Index ($h$):} For BLE, $h = 0.5$.
+    \item \textbf{Bit Duration ($T_b$):} The time for one bit ($1 \, \mu s$ for 1 Mbps PHY).
+    \item \textbf{Instantaneous Phase ($\theta(t)$):} The value used to drive the Sine/Cosine generator.
+\end{itemize}
+
+\subsection{Derivation of Frequency Deviation ($\Delta f$)}
+The frequency deviation is the maximum distance the signal moves from the center carrier. In GFSK, this is derived from the modulation index $h$. 
+\begin{equation}
+h = \text{Total Frequency Swing} \times T_b = (2\Delta f) \cdot T_b
+\end{equation}
+Isolating $\Delta f$ through algebraic division:
 \begin{equation}
 \Delta f = \frac{h}{2T_b}
 \end{equation}
-
-For BLE, $h = 0.5$ and $T_b = 1 \,\mu s$:
-
+Substituting the BLE standard values:
 \begin{equation}
-\Delta f = 250 \, \text{kHz}
+\Delta f = \frac{0.5}{2 \times 10^{-6}} = 250 \, \text{kHz}
 \end{equation}
 
----
-
-\subsubsection{Input Data Representation}
-
-The binary input sequence is represented as:
-
+\subsection{Phase Integral Derivation}
+The Baseband Processor generates a phase $\theta(t)$ that is the integral of the frequency. Given a sequence of bits $a_i$ and the shaping pulse $g(t)$, the instantaneous frequency deviation is:
 \begin{equation}
-x(t) = \sum_i a_i \delta(t - iT_b)
+f_{\text{dev}}(\tau) = \sum_{i} a_i g(\tau - iT_b)
 \end{equation}
-
-where $a_i \in \{+1, -1\}$.
-
----
-
-\subsubsection{Gaussian Filter (Time Domain)}
-
-The Gaussian impulse response is:
-
+The phase is the integral of this frequency deviation over time:
 \begin{equation}
-g(t) = \frac{1}{\sqrt{2\pi}\sigma} e^{-\frac{t^2}{2\sigma^2}}
+\theta(t) = 2\pi h \int_{-\infty}^{t} \left[ \sum_{i} a_i g(\tau - iT_b) \right] d\tau
 \end{equation}
-
----
-
-\subsubsection{Gaussian Filter (Frequency Domain)}
-
-Applying Fourier Transform:
-
+Using the linearity property of integration, the summation is moved outside the integral:
 \begin{equation}
-G(f) = e^{-2\pi^2 \sigma^2 f^2}
+\theta(t) = 2\pi h \sum_{i} a_i \left( \int_{-\infty}^{t} g(\tau - iT_b) d\tau \right)
 \end{equation}
+This confirms that the total phase is the cumulative sum of the areas under the shaped pulses, ensuring a smooth transition between symbols.
 
-This limits high-frequency components and reduces spectral width.
+\subsection{RTL Significance: From Calculus to Hardware}
+In the RTL implementation, this mathematical model is mapped to a \textbf{Phase Accumulator} within a Numerically Controlled Oscillator (NCO):
+\begin{enumerate}
+    \item \textbf{Continuous vs. Discrete:} The integral is replaced by a digital summation: $\theta[n] = \theta[n-1] + f_{word}[n]$.
+    \item \textbf{Phase Continuity:} The accumulator ensures that when a bit changes (e.g., $+1$ to $-1$), the phase starts from its last value rather than resetting. This prevents "Phase Jumps" that would cause spectral splatter.
+    \item \textbf{Hardware Efficiency:} The integral of the shaping pulse is pre-calculated and stored in a Look-Up Table (LUT), reducing the FPGA/ASIC workload to simple addition.
+\end{enumerate}
 
----
+\section{Implementation Parameters and NCO Calibration}
 
-\subsubsection{Inverse Fourier Transform}
+To translate the theoretical GFSK model into a functional RTL design, the system parameters must be mapped to the hardware clocking constraints and Numerically Controlled Oscillator (NCO) bit-widths.
 
-\begin{equation}
-g(t) = \int_{-\infty}^{\infty} G(f) e^{j2\pi ft} df
-\end{equation}
-
----
-
-\subsubsection{Convolution with Input Data}
-
-The filtered signal is obtained by convolution:
-
-\begin{equation}
-s(t) = x(t) * g(t)
-\end{equation}
-
-\begin{equation}
-s(t) = \sum_i a_i g(t - iT_b)
-\end{equation}
-
-This smooths sharp transitions in the input signal.
-
-
-\subsubsection{Instantaneous Frequency}
-
-\begin{equation}
-f(t) = s(t)
-\end{equation}
-
-
-\subsubsection{Phase Calculation}
-
-The phase is obtained by integrating frequency:
-
-\begin{equation}
-\theta(t) = 2\pi h \int_{-\infty}^{t} s(\tau) d\tau
-\end{equation}
-
-\begin{equation}
-\theta(t) = 2\pi h \sum_i a_i \int_{-\infty}^{t} g(\tau - iT_b) d\tau
-\end{equation}
-
-This ensures continuous phase modulation.
-
-
-\section{PLL and Phase Accumulator Calculations}
-
-\subsubsection{PLL Frequency Scaling}
-
-\begin{equation}
-M = \frac{F_{int}}{F_{ref}} = \frac{400 \, \text{MHz}}{20 \, \text{MHz}} = 20
-\end{equation}
-
-Thus, internal clock:
-
-\begin{equation}
-F_{int} = 400 \, \text{MHz}
-\end{equation}
-
----
-
-\subsubsection{Samples Per Symbol}
-
-\begin{equation}
-SPS = \frac{F_{int}}{R}
-\end{equation}
-
-For $R = 20 \, \text{Mbps}$:
-
-\begin{equation}
-SPS = 20
-\end{equation}
-
-
-
-\subsubsection{NCO Tuning Word Calculation}
-
-The tuning word for NCO:
-
-\begin{equation}
-M = \frac{F_{target} \cdot 2^N}{F_{int}}
-\end{equation}
-
-For $N = 8$:
-
-\textbf{Carrier Frequency:}
-
-\begin{equation}
-M_{center} = 64
-\end{equation}
-
-\textbf{Frequency Deviation:}
-
-\begin{equation}
-M_{dev} \approx 6.4 \approx 6
-\end{equation}
-
-
-
-\subsubsection{Frequency Mapping}
-
+\subsection{Clock Synthesis and PLL Scaling}
+The design utilizes a Phase-Locked Loop (PLL) to multiply the input reference frequency, providing sufficient timing resolution for the GFSK shaping pulse.
 \begin{itemize}
-\item Logic `1' $\rightarrow 64 + 6 = 70$
-\item Logic `0' $\rightarrow 64 - 6 = 58$
+    \item \textbf{Input Reference ($F_{ref}$):} 20 MHz
+    \item \textbf{Target Internal Clock ($F_{int}$):} 400 MHz
+    \item \textbf{Multiplication Factor ($M$):}
+    \begin{equation}
+    M = \frac{F_{int}}{F_{ref}} = \frac{400 \text{ MHz}}{20 \text{ MHz}} = 20
+    \end{equation}
+\end{itemize}
+In the Verilog module \texttt{tx\_modulator\_clocks.v}, this is parameterized as \texttt{PLL\_MULT = 20}.
+
+\subsection{Samples Per Symbol (SPS)}
+The SPS defines the discretization of the Gaussian ramp. A higher SPS results in a smoother frequency transition and lower spectral leakage.
+\begin{itemize}
+    \item \textbf{Data Rate ($R$):} 20 Mbps
+    \item \textbf{SPS Calculation:}
+    \begin{equation}
+    SPS = \frac{F_{int}}{R} = \frac{400 \text{ MHz}}{20 \text{ Mbps}} = 20 \text{ samples/bit}
+    \end{equation}
 \end{itemize}
 
-
-
-\subsubsection{Phase Accumulator Operation}
-
+\subsection{NCO Tuning Word Calculation}
+The NCO employs an 8-bit phase accumulator ($N=256$). The frequency control word (FCW or $M$) determines the phase step size per clock cycle:
 \begin{equation}
-\theta[n] = \theta[n-1] + M
+M = \frac{F_{target} \times 2^N}{F_{int}}
 \end{equation}
 
-This performs discrete integration of frequency and ensures phase continuity.
-
-
-
-\subsubsection{Clock Timing}
-
-\begin{equation}
-T = \frac{1}{400 \, \text{MHz}} = 2.5 \, \text{ns}
-\end{equation}
-
-\begin{equation}
-T_{toggle} = 1.25 \, \text{ns}
-\end{equation}
-
-
-\subsubsection{Verification from Simulation}
-
+\subsubsection{Carrier and Deviation Mapping}
+Using the 400 MHz system clock, the tuning words for the center carrier and the frequency shift are calculated as:
 \begin{itemize}
-\item External Clock = 20 MHz
-\item Internal Clock = 400 MHz
-\item RF Output (Logic 1) $\approx 106$ MHz
-\item RF Output (Logic 0) $\approx 93$ MHz
+    \item \textbf{Center Carrier (100 MHz):} $M_{center} = \frac{100 \times 256}{400} = 64$ ($8'h40$)
+    \item \textbf{Frequency Deviation (10 MHz):} $M_{dev} = \frac{10 \times 256}{400} \approx 6$
 \end{itemize}
 
-These results confirm correct implementation of GFSK modulation.
+Consequently, the modulated output frequencies are represented by the following digital values:
+\begin{itemize}
+    \item \textbf{Logic '1' (110 MHz):} $64 + 6 = 70$
+    \item \textbf{Logic '0' (90 MHz):} $64 - 6 = 58$
+\end{itemize}
 
+\subsection{Simulation and Verification Results}
+The simulation timing is scaled to match the 400 MHz physical behavior. With a period $T = 2.5 \text{ ns}$, the simulator toggle rate is set to $1.25 \text{ ns}$. The following table summarizes the expected versus observed values during GTKWave verification.
+
+\begin{table}[h]
+\centering
+\caption{GTKWave Verification Summary}
+\vspace{0.5em}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Signal} & \textbf{Expected Frequency} & \textbf{Expected Period} \\ \midrule
+\texttt{ext\_clk}   & 20 MHz                & 50 ns \\
+\texttt{clk\_fast}  & 400 MHz               & 2.5 ns \\
+\texttt{rf\_out} (Logic 1) & 106.4 MHz$^*$  & $\approx$ 9.4 ns \\
+\texttt{rf\_out} (Logic 0) & 93.6 MHz$^*$   & $\approx$ 10.6 ns \\ \bottomrule
+\end{tabular}
+\end{table}
 \section{Summary}
 
 The theoretical basis of the BLE baseband transceiver was provided in this chapter. The basics of BLE communication, such as packet, the data whitening technique using LFSR, and GFSK modulation and demodulation processes were discussed in detail.
